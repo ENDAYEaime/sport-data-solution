@@ -1,0 +1,53 @@
+id: sport_data_pipeline
+namespace: sport
+
+description: "Pipeline complet Sport Data Solution : ingestion, qualité, transformation, notification"
+
+triggers:
+  - id: schedule_mensuel
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 1 * *"  # 1er du mois à 6h
+
+tasks:
+  - id: ingest
+    type: io.kestra.plugin.scripts.python.Script
+    description: "Lecture xlsx et insertion en base"
+    script: |
+      import subprocess
+      subprocess.run(["python", "/app/scripts/01_ingest.py"], check=True)
+
+  - id: quality
+    type: io.kestra.plugin.scripts.python.Script
+    description: "Contrôles qualité des données"
+    script: |
+      import subprocess
+      subprocess.run(["python", "/app/scripts/02_quality.py"], check=True)
+    dependsOn:
+      - ingest
+
+  - id: transform
+    type: io.kestra.plugin.scripts.python.Script
+    description: "Calcul des primes et avantages"
+    script: |
+      import subprocess
+      subprocess.run(["python", "/app/scripts/03_transform.py"], check=True)
+    dependsOn:
+      - quality
+
+  - id: notify
+    type: io.kestra.plugin.scripts.python.Script
+    description: "Envoi des notifications Slack"
+    script: |
+      import subprocess
+      subprocess.run(["python", "/app/scripts/04_notify.py"], check=True)
+    dependsOn:
+      - transform
+
+errors:
+  - id: on_failure
+    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    url: "{{ secret('SLACK_WEBHOOK_URL') }}"
+    payload: |
+      {
+        "text": "Erreur dans le pipeline Sport Data : {{ error.message }}"
+      }
