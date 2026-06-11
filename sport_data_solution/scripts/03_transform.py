@@ -4,85 +4,121 @@ from utils import get_connection, logger
 
 PROCESSED_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "processed")
 
-# Règles métier
-PRIME_RATE = 0.05          # 5% du salaire
-MIN_SESSIONS = 3           # sessions/mois pour être éligible
-WELLBEING_DAYS = 2         # jours bien-être accordés si éligible
+PRIME_RATE = 0.05
+WELLBEING_DAYS = 5
 
 
 def compute_benefits(conn):
     with conn.cursor() as cur:
+        cur.execute("TRUNCATE TABLE benefits_summary;")
+
         cur.execute(
             """
+            INSERT INTO benefits_summary (
+                id_employe,
+                nom,
+                prenom,
+                departement,
+                salaire,
+                sport,
+                eligible_prime,
+                montant_prime,
+                eligible_bien_etre,
+                jours_bien_etre,
+                statut_final
+            )
             SELECT
                 e.id_employe,
                 e.nom,
                 e.prenom,
+                e.departement,
                 e.salaire,
-                COUNT(a.id) AS nb_sessions,
-                SUM(a.distance_km) AS total_km
+                s.sport,
+
+                CASE
+                    WHEN s.sport IS NOT NULL
+                     AND TRIM(s.sport) <> ''
+                     AND LOWER(TRIM(s.sport)) NOT IN ('non', 'aucun', 'none', 'nan')
+                    THEN TRUE
+                    ELSE FALSE
+                END AS eligible_prime,
+
+                CASE
+                    WHEN s.sport IS NOT NULL
+                     AND TRIM(s.sport) <> ''
+                     AND LOWER(TRIM(s.sport)) NOT IN ('non', 'aucun', 'none', 'nan')
+                    THEN ROUND((e.salaire * %s)::numeric, 2)
+                    ELSE 0
+                END AS montant_prime,
+
+                CASE
+                    WHEN s.sport IS NOT NULL
+                     AND TRIM(s.sport) <> ''
+                     AND LOWER(TRIM(s.sport)) NOT IN ('non', 'aucun', 'none', 'nan')
+                    THEN TRUE
+                    ELSE FALSE
+                END AS eligible_bien_etre,
+
+                CASE
+                    WHEN s.sport IS NOT NULL
+                     AND TRIM(s.sport) <> ''
+                     AND LOWER(TRIM(s.sport)) NOT IN ('non', 'aucun', 'none', 'nan')
+                    THEN %s
+                    ELSE 0
+                END AS jours_bien_etre,
+
+                CASE
+                    WHEN s.sport IS NOT NULL
+                     AND TRIM(s.sport) <> ''
+                     AND LOWER(TRIM(s.sport)) NOT IN ('non', 'aucun', 'none', 'nan')
+                    THEN 'Prime + jours bien-être'
+                    ELSE 'Aucun avantage'
+                END AS statut_final
+
             FROM employees e
-            LEFT JOIN activities a ON e.id_employe = a.id_employe
-            GROUP BY e.id_employe, e.nom, e.prenom, e.salaire;
-            """
+            LEFT JOIN sports s
+                ON e.id_employe = s.id_employe;
+            """,
+            (PRIME_RATE, WELLBEING_DAYS),
         )
-        rows = cur.fetchall()
 
-    results = []
-    for id_employe, nom, prenom, salaire, nb_sessions, total_km in rows:
-        nb_sessions = nb_sessions or 0
-        total_km = total_km or 0
-        eligible = nb_sessions >= MIN_SESSIONS
-        prime = round(float(salaire) * PRIME_RATE, 2) if eligible else 0.0
-        jours_bienetre = WELLBEING_DAYS if eligible else 0
-        results.append((id_employe, eligible, prime, jours_bienetre, int(nb_sessions), float(total_km)))
-
-    with conn.cursor() as cur:
-        cur.execute("TRUNCATE TABLE benefits;")
-        for row in results:
-            cur.execute(
-                """
-                INSERT INTO benefits (id_employe, eligible_prime, montant_prime, jours_bienetre, nb_sessions, total_km)
-                VALUES (%s, %s, %s, %s, %s, %s);
-                """,
-                row,
-            )
     conn.commit()
-    logger.info(f"{len(results)} avantages calculés.")
-    return results
+    logger.info("Table benefits_summary calculée.")
 
 
 def export_csv(conn):
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT
-                e.id_employe, e.nom, e.prenom, e.departement,
-                b.eligible_prime, b.montant_prime, b.jours_bienetre,
-                b.nb_sessions, b.total_km
-            FROM employees e
-            JOIN benefits b ON e.id_employe = b.id_employe
-            ORDER BY e.departement, e.nom;
+            SELECT *
+            FROM benefits_summary
+            ORDER BY departement, nom, prenom;
             """
         )
         rows = cur.fetchall()
         cols = [desc[0] for desc in cur.description]
 
     df = pd.DataFrame(rows, columns=cols)
+
     os.makedirs(PROCESSED_DIR, exist_ok=True)
-    out_path = os.path.join(PROCESSED_DIR, "avantages_sport.csv")
+
+    out_path = os.path.join(PROCESSED_DIR, "benefits_summary.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
-    logger.info(f"Export CSV : {out_path}")
+
+    logger.info(f"Export CSV créé : {out_path}")
 
 
 def run():
     logger.info("=== 03_transform : démarrage ===")
+
     conn = get_connection()
+
     try:
         compute_benefits(conn)
         export_csv(conn)
     finally:
         conn.close()
+
     logger.info("=== 03_transform : terminé ===")
 
 

@@ -10,10 +10,25 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
 logger = logging.getLogger(__name__)
 
 
 def get_connection():
+
+    required_vars = [
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    ]
+
+    missing = [var for var in required_vars if not os.getenv(var)]
+
+    if missing:
+        raise ValueError(
+            f"Variables .env manquantes : {', '.join(missing)}"
+        )
+
     return psycopg2.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"),
         port=os.getenv("POSTGRES_PORT", 5432),

@@ -1,53 +1,128 @@
 id: sport_data_pipeline
 namespace: sport
 
-description: "Pipeline complet Sport Data Solution : ingestion, qualité, transformation, notification"
+description: "Pipeline Sport Data Solution : ingestion, qualité, transformation et notification"
 
 triggers:
   - id: schedule_mensuel
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "0 6 1 * *"  # 1er du mois à 6h
+    cron: "0 6 1 * *"
 
 tasks:
+
+  # ==================================================
+  # 1. INGESTION DES DONNÉES
+  # ==================================================
+
   - id: ingest
     type: io.kestra.plugin.scripts.python.Script
-    description: "Lecture xlsx et insertion en base"
+    description: "Import des fichiers RH et Sport dans PostgreSQL"
+
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+
+    beforeCommands:
+      - pip install pandas openpyxl psycopg2-binary python-dotenv requests
+
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sport_db
+      POSTGRES_USER: sport_user
+      POSTGRES_PASSWORD: sport_password
+
     script: |
-      import subprocess
-      subprocess.run(["python", "/app/scripts/01_ingest.py"], check=True)
+      import sys
+      sys.path.insert(0, "/app/scripts")
+      import importlib
+
+      module = importlib.import_module("01_ingest")
+      module.run()
+
+  # ==================================================
+  # 2. CONTRÔLE QUALITÉ
+  # ==================================================
 
   - id: quality
     type: io.kestra.plugin.scripts.python.Script
     description: "Contrôles qualité des données"
+
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+
+    beforeCommands:
+      - pip install pandas openpyxl psycopg2-binary python-dotenv requests
+
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sport_db
+      POSTGRES_USER: sport_user
+      POSTGRES_PASSWORD: sport_password
+
     script: |
-      import subprocess
-      subprocess.run(["python", "/app/scripts/02_quality.py"], check=True)
-    dependsOn:
-      - ingest
+      import sys
+      sys.path.insert(0, "/app/scripts")
+      import importlib
+
+      module = importlib.import_module("02_quality")
+      module.run()
+
+  # ==================================================
+  # 3. TRANSFORMATION MÉTIER
+  # ==================================================
 
   - id: transform
     type: io.kestra.plugin.scripts.python.Script
-    description: "Calcul des primes et avantages"
+    description: "Calcul des avantages sportifs"
+
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+
+    beforeCommands:
+      - pip install pandas openpyxl psycopg2-binary python-dotenv requests
+
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sport_db
+      POSTGRES_USER: sport_user
+      POSTGRES_PASSWORD: sport_password
+
     script: |
-      import subprocess
-      subprocess.run(["python", "/app/scripts/03_transform.py"], check=True)
-    dependsOn:
-      - quality
+      import sys
+      sys.path.insert(0, "/app/scripts")
+      import importlib
+
+      module = importlib.import_module("03_transform")
+      module.run()
+
+  # ==================================================
+  # 4. NOTIFICATION SLACK
+  # ==================================================
 
   - id: notify
     type: io.kestra.plugin.scripts.python.Script
-    description: "Envoi des notifications Slack"
-    script: |
-      import subprocess
-      subprocess.run(["python", "/app/scripts/04_notify.py"], check=True)
-    dependsOn:
-      - transform
+    description: "Notification Slack"
 
-errors:
-  - id: on_failure
-    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
-    url: "{{ secret('SLACK_WEBHOOK_URL') }}"
-    payload: |
-      {
-        "text": "Erreur dans le pipeline Sport Data : {{ error.message }}"
-      }
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+
+    beforeCommands:
+      - pip install pandas openpyxl psycopg2-binary python-dotenv requests
+
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sport_db
+      POSTGRES_USER: sport_user
+      POSTGRES_PASSWORD: sport_password
+      SLACK_WEBHOOK_URL: "{{ secret('SLACK_WEBHOOK_URL') }}"
+
+    script: |
+      import sys
+      sys.path.insert(0, "/app/scripts")
+      import importlib
+
+      module = importlib.import_module("04_notify")
+      module.run()

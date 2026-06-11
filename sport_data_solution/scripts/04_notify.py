@@ -6,58 +6,97 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
 
 def build_message(conn):
+
     with conn.cursor() as cur:
+
         cur.execute(
             """
-            SELECT
-                a.sport,
-                COUNT(DISTINCT a.id_employe) AS nb_participants,
-                ROUND(SUM(a.distance_km)::numeric, 1) AS total_km,
-                COUNT(b.id_employe) FILTER (WHERE b.eligible_prime) AS nb_eligibles
-            FROM activities a
-            LEFT JOIN benefits b ON a.id_employe = b.id_employe
-            GROUP BY a.sport
-            ORDER BY nb_participants DESC;
+            SELECT COUNT(*)
+            FROM benefits_summary
+            WHERE eligible_prime = TRUE;
             """
         )
-        rows = cur.fetchall()
-
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM benefits WHERE eligible_prime = TRUE;")
         total_eligibles = cur.fetchone()[0]
-        cur.execute("SELECT COALESCE(SUM(montant_prime), 0) FROM benefits;")
-        total_prime = cur.fetchone()[0]
 
-    lines = ["*Rapport Sport Data Solution*", ""]
-    for sport, nb_part, total_km, nb_elig in rows:
-        lines.append(f"• *{sport}* : {nb_part} participants, {total_km} km")
-    lines.append("")
-    lines.append(f"Employés éligibles à la prime : *{total_eligibles}*")
-    lines.append(f"Coût total primes entreprise : *{total_prime:.2f} €*")
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(montant_prime), 0)
+            FROM benefits_summary;
+            """
+        )
+        total_primes = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            SELECT sport, COUNT(*)
+            FROM benefits_summary
+            WHERE sport IS NOT NULL
+            GROUP BY sport
+            ORDER BY COUNT(*) DESC;
+            """
+        )
+        sports = cur.fetchall()
+
+    lines = [
+        "🏃 Rapport Sport Data Solution",
+        "",
+        f"Employés éligibles à la prime : {total_eligibles}",
+        f"Coût total des primes : {float(total_primes):.2f} €",
+        "",
+        "Sports pratiqués :"
+    ]
+
+    for sport, nb in sports:
+        lines.append(f"• {sport} : {nb} salarié(s)")
 
     return "\n".join(lines)
 
 
 def send_slack(message):
-    if not SLACK_WEBHOOK_URL or SLACK_WEBHOOK_URL.startswith("https://hooks.slack.com/services/XXXX"):
-        logger.warning("SLACK_WEBHOOK_URL non configurée — notification ignorée.")
+
+    if (
+        not SLACK_WEBHOOK_URL
+        or SLACK_WEBHOOK_URL.startswith(
+            "https://hooks.slack.com/services/XXXX"
+        )
+    ):
+        logger.warning(
+            "SLACK_WEBHOOK_URL non configurée - notification ignorée."
+        )
         return
-    resp = requests.post(SLACK_WEBHOOK_URL, json={"text": message}, timeout=10)
-    if resp.status_code == 200:
+
+    response = requests.post(
+        SLACK_WEBHOOK_URL,
+        json={"text": message},
+        timeout=10
+    )
+
+    if response.status_code == 200:
         logger.info("Notification Slack envoyée.")
     else:
-        logger.error(f"Erreur Slack : {resp.status_code} {resp.text}")
+        logger.error(
+            f"Erreur Slack : {response.status_code} {response.text}"
+        )
 
 
 def run():
+
     logger.info("=== 04_notify : démarrage ===")
+
     conn = get_connection()
+
     try:
         message = build_message(conn)
-        logger.info(f"Message Slack :\n{message}")
+
+        logger.info(
+            f"Message Slack généré :\n{message}"
+        )
+
         send_slack(message)
+
     finally:
         conn.close()
+
     logger.info("=== 04_notify : terminé ===")
 
 

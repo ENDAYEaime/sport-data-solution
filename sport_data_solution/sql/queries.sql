@@ -1,57 +1,63 @@
--- Employés éligibles à la prime
+-- Salariés éligibles à la prime
 SELECT
-    e.id_employe,
-    e.nom,
-    e.prenom,
-    e.departement,
-    b.nb_sessions,
-    b.total_km,
-    b.montant_prime,
-    b.jours_bienetre
-FROM employees e
-JOIN benefits b ON e.id_employe = b.id_employe
-WHERE b.eligible_prime = TRUE
-ORDER BY b.montant_prime DESC;
+    id_employe,
+    nom,
+    prenom,
+    departement,
+    salaire,
+    sport,
+    montant_prime,
+    jours_bien_etre,
+    statut_final
+FROM benefits_summary
+WHERE eligible_prime = TRUE
+ORDER BY montant_prime DESC;
+
 
 -- Coût total des primes par département
 SELECT
-    e.departement,
-    COUNT(b.id_employe) AS nb_eligibles,
-    SUM(b.montant_prime) AS cout_total
-FROM employees e
-JOIN benefits b ON e.id_employe = b.id_employe
-WHERE b.eligible_prime = TRUE
-GROUP BY e.departement
+    departement,
+    COUNT(id_employe) AS nb_eligibles,
+    SUM(montant_prime) AS cout_total
+FROM benefits_summary
+WHERE eligible_prime = TRUE
+GROUP BY departement
 ORDER BY cout_total DESC;
 
--- Statistiques par sport
+
+-- Répartition des sports
 SELECT
     sport,
-    COUNT(DISTINCT id_employe) AS nb_participants,
-    ROUND(AVG(distance_km), 1) AS distance_moy_km,
-    ROUND(AVG(duree_min), 0) AS duree_moy_min,
-    SUM(distance_km) AS total_km
-FROM activities
+    COUNT(id_employe) AS nb_salaries
+FROM benefits_summary
+WHERE sport IS NOT NULL
+  AND TRIM(sport) <> ''
 GROUP BY sport
-ORDER BY nb_participants DESC;
+ORDER BY nb_salaries DESC;
 
--- Résumé par employé (sessions, km, prime)
+
+-- Résumé complet par salarié
 SELECT
-    e.id_employe,
-    e.nom,
-    e.prenom,
-    e.salaire,
-    b.nb_sessions,
-    b.total_km,
-    b.eligible_prime,
-    b.montant_prime,
-    b.jours_bienetre
-FROM employees e
-LEFT JOIN benefits b ON e.id_employe = b.id_employe
-ORDER BY e.departement, e.nom;
+    id_employe,
+    nom,
+    prenom,
+    departement,
+    salaire,
+    sport,
+    eligible_prime,
+    montant_prime,
+    eligible_bien_etre,
+    jours_bien_etre,
+    statut_final
+FROM benefits_summary
+ORDER BY departement, nom, prenom;
 
--- Erreurs qualité en attente
-SELECT type_erreur, COUNT(*) AS nb, MAX(detecte_le) AS derniere_detection
+
+-- Erreurs qualité détectées
+SELECT
+    type_erreur,
+    COUNT(*) AS nb,
+    MAX(detecte_le) AS derniere_detection
 FROM quality_errors
 GROUP BY type_erreur
 ORDER BY nb DESC;
